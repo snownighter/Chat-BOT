@@ -7,6 +7,7 @@ python, javascript, node.js
 !edit: 變更自訂指令集
 !remove: 移除自訂指令集
 !chat: 對話(自動回覆)
+!clear: 清除指令與BOT訊息
 
 1. 自訂新增語音頻道
 2. 自動關閉/刪除頻道
