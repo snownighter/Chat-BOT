@@ -1,8 +1,14 @@
 // run: node index.js
 
-const { Client, Events, GatewayIntentBits } = require('discord.js');
+const {
+    Client,
+    Events,
+    GatewayIntentBits,
+    PermissionsBitField,
+} = require('discord.js');
 const { token, originalVoiceChannelId } = require('./config.json');
 const { handleCommand } = require('./features/customCommands');
+const { joinVoiceChannel } = require('@discordjs/voice');
 
 // Create a new client instance
 const client = new Client({
@@ -18,6 +24,13 @@ const client = new Client({
 // Store the dynamically created voice channel IDs
 const dynamicVoiceChannels = new Set();
 
+// Store bot messages IDs to track them for deletion
+const botMessages = new Set();
+const userCommandMessages = new Set();
+
+// Store the voice connection
+let voiceConnection = null;
+
 // When the client is ready, run this code (only once)
 // We use 'c' for the event parameter to keep it separate from the already defined 'client'
 client.once(Events.ClientReady, (c) => {
@@ -25,12 +38,22 @@ client.once(Events.ClientReady, (c) => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-    if (message.author.bot) return;
+    if (message.author.bot) {
+        botMessages.add(message.id);
+        return;
+    }
     if (message.content.startsWith('!')) {
+        userCommandMessages.add(message.id);
         try {
-            const replyMessage = await handleCommand(message);
+            const replyMessage = await handleCommand(
+                message,
+                botMessages,
+                userCommandMessages,
+                voiceConnection
+            );
             if (replyMessage) {
-                message.reply(replyMessage);
+                const sentMessage = await message.reply(replyMessage);
+                botMessages.add(sentMessage.id);
             }
         } catch (err) {
             console.error(err);
@@ -85,6 +108,13 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
         // Add the ID of the newly created voice channel to the stored set
         dynamicVoiceChannels.add(newChannel.id);
+
+        // 機器人加入新語音頻道
+        voiceConnection = joinVoiceChannel({
+            channelId: newChannel.id,
+            guildId: newChannel.guild.id,
+            adapterCreator: newChannel.guild.voiceAdapterCreator,
+        });
     }
 
     // Check if the user switched from a dynamically created voice channel to another channel
@@ -93,7 +123,9 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         newState.channelId !== oldState.channelId
     ) {
         const channel = oldState.channel;
-        if (channel.members.size === 0) {
+        const members = channel.members;
+        
+        if (channel.members.size === 1) {
             // If there are no other users in the channel, delete it
             try {
                 await channel.delete();
